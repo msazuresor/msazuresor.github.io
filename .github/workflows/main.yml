@@ -1,22 +1,24 @@
-name: Invite User to Entra ID
+name: Process Registration
 on:
-  workflow_dispatch:
-    inputs:
-      name:
-        required: true
-      surname:
-        required: true
-      displayName:
-        required: true
-      email:
-        required: true
+  issues:
+    types: [opened]
 
 jobs:
-  invite-user:
+  process-registration:
+    if: contains(github.event.issue.title, 'Registration Request')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       
+      - name: Extract Registration Info
+        id: registration
+        run: |
+          BODY="${{ github.event.issue.body }}"
+          EMAIL=$(echo "$BODY" | grep "Email:" | cut -d':' -f2 | tr -d ' ')
+          DISPLAY_NAME=$(echo "$BODY" | grep "Display Name:" | cut -d':' -f2 | tr -d ' ')
+          echo "email=$EMAIL" >> $GITHUB_OUTPUT
+          echo "display_name=$DISPLAY_NAME" >> $GITHUB_OUTPUT
+
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -38,11 +40,17 @@ jobs:
           -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
           -H "Content-Type: application/json" \
           --data-raw '{
-            "invitedUserEmailAddress": "${{ github.event.inputs.email }}",
+            "invitedUserEmailAddress": "${{ steps.registration.outputs.email }}",
             "inviteRedirectUrl": "https://portal.azure.com",
             "sendInvitationMessage": true,
-            "invitedUserDisplayName": "${{ github.event.inputs.displayName }}"
+            "invitedUserDisplayName": "${{ steps.registration.outputs.display_name }}"
           }'
+
+      - name: Close Issue
+        uses: peter-evans/close-issue@v3
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          comment: "Registration processed successfully. An invitation has been sent to the email address."
 
       - name: Logout from Azure
         run: az logout
