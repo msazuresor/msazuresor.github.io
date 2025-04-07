@@ -1,0 +1,49 @@
+name: Invite User to Entra ID
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        required: true
+      surname:
+        required: true
+      displayName:
+        required: true
+      email:
+        required: true
+
+jobs:
+  invite-user:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}"}'
+
+      - name: Get Access Token
+        run: |
+          token=$(curl -X POST "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "client_id=${{ secrets.AZURE_CLIENT_ID }}" \
+          -d "client_secret=${{ secrets.AZURE_CLIENT_SECRET }}" \
+          -d "scope=https://graph.microsoft.com/.default" \
+          -d "grant_type=client_credentials" | jq -r '.access_token')
+          echo "ACCESS_TOKEN=$token" >> $GITHUB_ENV
+
+      - name: Invite Guest User
+        run: |
+          curl -X POST "https://graph.microsoft.com/v1.0/invitations" \
+          -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data-raw '{
+            "invitedUserEmailAddress": "${{ github.event.inputs.email }}",
+            "inviteRedirectUrl": "https://portal.azure.com",
+            "sendInvitationMessage": true,
+            "invitedUserDisplayName": "${{ github.event.inputs.displayName }}"
+          }'
+
+      - name: Logout from Azure
+        run: az logout
+        if: always()
